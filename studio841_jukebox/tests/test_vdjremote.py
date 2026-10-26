@@ -57,6 +57,11 @@ class Codec(unittest.TestCase):
         self.assertIn('artist="A &amp; B"', x)
         self.assertIn('position="2"', x)
 
+    def test_filedelete(self):
+        body = v.filedelete_body("netsearch://ap6765480964", 6)
+        self.assertEqual(body[:6], struct.pack("<HI", 0, 1))
+        self.assertIn('<filedelete path="netsearch://ap6765480964" position="6" />', body[6:].decode())
+
 
 if __name__ == "__main__":
     unittest.main()

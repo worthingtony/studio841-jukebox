@@ -26,16 +26,22 @@ DECK_QUERIES = {"loaded": "loaded", "artist": "get_artist", "title": "get_title_
 
 INGRESS_PEERS = {"172.30.32.2", "127.0.0.1"}  # HA's ingress proxy; localhost for development
 
+# Ticks in a row that may fail before the connection is dropped so VirtualDJ dials again.
+# 0.1.0 went back to waiting after one failure while VirtualDJ still held the old connection,
+# and sat there an hour (2026-10-26).
+MAX_FAILURES = 5
+
 
 class Jukebox:
-    def __init__(self, opts, advertiser):
+    def __init__(self, opts, advertiser, vdj=None):
         self.opts = opts
-        self.vdj = VdjRemote(opts["remote_name"], opts["remote_port"], advertiser)
+        self.vdj = vdj or VdjRemote(opts["remote_name"], opts["remote_port"], advertiser)
         self.lock = threading.Lock()
         self.status = {"connected": False, "decks": {}, "automix": [], "catalogue": 0,
                        "autopilot": opts["autopilot"], "last_error": None, "updated": None}
         self.catalogue, self.catalogue_at = [], 0
         self.played = {}  # path -> time last seen on a deck
+        self.starved = False  # autopilot found nothing to add; warn once, not every tick
 
     # --- VirtualDJ side ---
     def run(self):
@@ -44,16 +50,28 @@ class Jukebox:
                 log.info("waiting for VirtualDJ to connect as %r", self.opts["remote_name"])
                 self.vdj.accept()
                 ids = {(d, k): self.vdj.watch(f"deck {d} {q}") for d in (1, 2) for k, q in DECK_QUERIES.items()}
-                while self.vdj.connected:
-                    self.tick(ids)
-                    time.sleep(3)
-            except Exception as e:  # keep serving; VirtualDJ reconnects on its own
-                log.exception("connection loop: %s", e)
-                with self.lock:
-                    self.status["last_error"] = f"{time.strftime('%H:%M:%S')} {e}"
+            except Exception as e:
+                self.error("connecting", e)
                 time.sleep(5)
+                continue
+            failures = 0
+            while self.vdj.connected:
+                try:
+                    self.tick(ids)
+                    failures = 0
+                except Exception as e:  # one slow answer is not a lost connection
+                    failures += 1
+                    self.error(f"tick ({failures} in a row)", e)
+                    if failures >= MAX_FAILURES:
+                        self.vdj.drop()
+                time.sleep(3)
             with self.lock:
                 self.status["connected"] = False
+
+    def error(self, where, e):
+        log.warning("%s: %s", where, e, exc_info=not isinstance(e, (TimeoutError, ConnectionError)))
+        with self.lock:
+            self.status["last_error"] = f"{time.strftime('%H:%M:%S')} {where}: {e}"
 
     def tick(self, ids):
         decks = {d: {k: self.vdj.values.get(ids[(d, k)]) for k in DECK_QUERIES} for d in (1, 2)}
@@ -81,8 +99,11 @@ class Jukebox:
         last = automix[-1] if automix else None
         song = planner.next_fallback(last, self.catalogue, exclude)
         if song is None:
-            log.warning("runway short by %d but the catalogue has nothing left to add", short)
+            if not self.starved:
+                log.warning("runway short by %d but the catalogue has nothing left to add", short)
+            self.starved = True
             return
+        self.starved = False
         log.info("autopilot: adding %s - %s at %d (fit %s)", song.get("artist"), song.get("title"),
                  len(automix), flow.fit(last, song) if last else "-")
         self.vdj.add_to_automix(song, len(automix))
