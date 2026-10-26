@@ -4,8 +4,9 @@ How well one song flows into the next: tempo and key.
 VirtualDJ's folder XML gives both, in its own encodings (worked out 2026-10-25 against songs
 whose keys VirtualDJ also shows as text):
 - bpm: seconds per beat (0.488 = 123 BPM); 0 when not analysed.
-- key: 0-11 minor and 12-23 major, both starting at G#/Ab - Cm = 4, G = 23, A = 13.
-  0 with no tempo means not analysed (a real Abm song has a tempo).
+- key: 1-12 minor and 13-24 major, both starting at A - Cm = 4, G = 23, A = 13, and
+  Ab = 24 (Rick Astley, 2026-10-26: a 24 ruled out the 0-23 reading of 2026-10-25).
+  0 means not analysed.
 
 Keys are compared on the Camelot wheel: same number, a neighbour (+-1), or the relative
 major/minor (same number, other letter) mix cleanly.
@@ -23,10 +24,10 @@ def bpm(song):
 
 def key(song):
     """(pitch class 0-11 with C = 0, is_major), or None when not analysed."""
-    if bpm(song) is None or song.get("key") in (None, ""):
+    code = int(song.get("key") or 0)
+    if not 1 <= code <= 24:
         return None
-    code = int(song["key"])
-    return (code % 12 - 4) % 12, code >= 12
+    return (code % 12 - 4) % 12, code >= 13
 
 
 def key_name(song):

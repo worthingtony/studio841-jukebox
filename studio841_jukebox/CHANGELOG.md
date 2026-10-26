@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 - 2026-10-26
+- Keys decode as VirtualDJ writes them: 1-12 minor and 13-24 major, both from A, and 0 means
+  not analysed. 0.1.1 read A-flat minor (12) as A-flat major, and read 0 as A-flat minor
+  when the song had a tempo. A song in A-flat major (24) showed the old reading was wrong.
+- Status page: whether Automix is on, and how many songs it holds (the list still shows 12).
+- The default catalogue is the `party` playlist.
+
 ## 0.1.1 - 2026-10-26
 - A failed tick no longer drops the connection. 0.1.0 went back to waiting after one
   unanswered request while VirtualDJ still held the old connection, and sat there for an hour.
