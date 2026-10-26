@@ -1,7 +1,7 @@
 name: "Studio 841 Jukebox"
 # Bump on EVERY deploy: the app is built from a git branch, so without a bump the
 # version string is the same before and after a push and a stale build is invisible.
-version: "0.1.0"
+version: "0.1.1"
 slug: "studio841_jukebox"
 description: "Hands-off guest jukebox for VirtualDJ - drives Automix by posing as a VirtualDJ Remote"
 url: "https://github.com/worthingtony/studio841-jukebox"

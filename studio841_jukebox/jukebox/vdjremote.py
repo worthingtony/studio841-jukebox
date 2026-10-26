@@ -12,7 +12,7 @@ does. The protocol is undocumented; everything here was read off the wire on 202
   query's value whenever it changes (VALUE). Registrations are numbered from 0 in order.
 - Folders and searches are read by path (FOLDER_REQ -> FOLDER, plain XML or a zip holding
   data.xml); a song is added to the Automix list by path at an exact position
-  (FOLDER_UPDATE with a <filedrop>).
+  (FOLDER_UPDATE with a <filedrop>), and taken out the same way (<filedelete>).
 
 Registered scripts are evaluated as queries (VDJScript's "LED" context), so registering one
 never runs it. A Remote "press" (type 2) would run an action; nothing here sends one.
@@ -103,13 +103,33 @@ def folder_path(xml):
     return html.unescape(m.group(1)) if m else None
 
 
+def _folderupdate(folder, element):
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?>\r\n<folderupdate path={quoteattr(folder)} '
+           f'name={quoteattr(folder)}>\r\n\t<{element} />\r\n</folderupdate>\r\n')
+    return struct.pack("<HI", 0, 1) + xml.encode()
+
+
 def filedrop_body(song, position, folder=AUTOMIX):
     attrs = " ".join(f"{k}={quoteattr(song[k])}" for k in
                      ("path", "artist", "title", "remix", "bpm", "key", "length") if song.get(k))
-    xml = (f'<?xml version="1.0" encoding="UTF-8"?>\r\n<folderupdate path={quoteattr(folder)} '
-           f'name={quoteattr(folder)}>\r\n\t<filedrop {attrs} position="{int(position)}" />\r\n'
-           "</folderupdate>\r\n")
-    return struct.pack("<HI", 0, 1) + xml.encode()
+    return _folderupdate(folder, f'filedrop {attrs} position="{int(position)}"')
+
+
+def filedelete_body(path, position, folder=AUTOMIX):
+    # The Remote app names <filedelete> beside <filedrop> and <filemove source_position=...>.
+    # Checked 2026-10-26: it removes a song from the Automix list; sent to a My Lists playlist
+    # it did nothing.
+    return _folderupdate(folder, f'filedelete path={quoteattr(path)} position="{int(position)}"')
+
+
+def keepalive(sock, idle=20, interval=5, count=3, user_timeout_ms=30000):
+    """Notice a dead link in under a minute. Without this a request that is never answered
+    takes Linux's retransmit limit to fail - 15m51s on 2026-10-26, all of it 'connected'."""
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    for name, value in (("TCP_KEEPIDLE", idle), ("TCP_KEEPINTVL", interval),
+                        ("TCP_KEEPCNT", count), ("TCP_USER_TIMEOUT", user_timeout_ms)):
+        if hasattr(socket, name):  # Linux has all four; macOS lacks the first and last
+            sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), value)
 
 
 def local_ip(probe="172.16.0.1"):
@@ -181,6 +201,7 @@ class VdjRemote:
         except socket.timeout:
             raise TimeoutError(f"VirtualDJ did not connect - is {self.name!r} on its Remote accept list?")
         conn.settimeout(None)
+        keepalive(conn)
         with self.cond:
             self._reset()
             self.conn = conn
@@ -190,6 +211,19 @@ class VdjRemote:
                    b'<?xml version="1.0" encoding="UTF-8"?>\r\n<info build="9618" skin="Default:4x3T" '
                    b'width="1000" height="1000" dpi="1.0" />\r\n')
         threading.Thread(target=self._read, args=(conn,), daemon=True).start()
+
+    def drop(self):
+        """Close this connection without a BYE, so VirtualDJ sees it go and dials again."""
+        with self.cond:
+            conn, self.conn = self.conn, None
+            self.cond.notify_all()
+        if conn:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            conn.close()
+            log.warning("dropped the connection to VirtualDJ")
 
     def close(self):
         try:
@@ -281,6 +315,18 @@ class VdjRemote:
         while time.time() < end:
             time.sleep(0.5)
             after = self.automix()
-            if position < len(after) and after[position].get("path") == song["path"]:
+            # Automix may move on a song meanwhile, which shifts the list up by one
+            if any(0 <= i < len(after) and after[i].get("path") == song["path"] for i in (position, position - 1)):
                 return after
         raise RuntimeError(f"{song.get('path')} is not at position {position} after the drop")
+
+    def remove_from_automix(self, song, position, timeout=5):
+        """Take `song` out of the Automix list at `position`, then read back. Returns the new list."""
+        self._send(T_FOLDER_UPDATE, filedelete_body(song["path"], position))
+        end = time.time() + timeout
+        while time.time() < end:
+            time.sleep(0.5)
+            after = self.automix()
+            if not any(0 <= i < len(after) and after[i].get("path") == song["path"] for i in (position, position - 1)):
+                return after
+        raise RuntimeError(f"{song.get('path')} is still at position {position} after the delete")
