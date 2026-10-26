@@ -16,7 +16,7 @@ from .vdjremote import VdjRemote, ZeroconfAdvertiser, DnsSdAdvertiser
 
 log = logging.getLogger("jukebox")
 
-DEFAULTS = {"remote_name": "Studio 841 Jukebox", "remote_port": 4250, "status_port": 8099,  # = ingress_port
+DEFAULTS = {"remote_name": "Studio 841 Jukebox", "remote_port": 4250, "status_port": 8841,  # = ingress_port; 8099 is taken on the Pi
             "catalogue": "mylists:/ZZZ CLAUDE test.subfolders", "autopilot": False, "runway": 6,
             "history_hours": 3, "log_level": "info"}
 

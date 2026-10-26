@@ -25,7 +25,7 @@ homeassistant_api: false
 # Status page, Tony only: through HA ingress (behind HA login). The server also refuses
 # anything that isn't HA's ingress proxy, since host networking puts it on the LAN too.
 ingress: true
-ingress_port: 8099
+ingress_port: 8841  # 8099 is already taken on the Pi host (answered 200, 2026-10-25)
 panel_title: "Jukebox"
 panel_icon: mdi:music-circle
 

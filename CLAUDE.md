@@ -13,7 +13,7 @@ worthingtony/basement-sound `jukebox/README.md` (decisions, protocol evidence, p
 - Tests: `cd studio841_jukebox && python3 -m unittest discover tests` (stdlib only).
 - Run locally on the Mac (temporary, read-only): `cd studio841_jukebox && python3 -m jukebox.main
   --options <file>` with `{"remote_name": "ZZZ CLAUDE jukebox"}` - that name is already accepted in
-  VirtualDJ; it advertises with macOS `dns-sd` and withdraws it on exit. Status: http://127.0.0.1:8099/
+  VirtualDJ; it advertises with macOS `dns-sd` and withdraws it on exit. Status: http://127.0.0.1:8841/
 
 ## Protocol quick facts (details: basement-sound README)
 - VirtualDJ connects to the Remote (Bonjour `_vdjremote8._tcp`); accept list is by name.
