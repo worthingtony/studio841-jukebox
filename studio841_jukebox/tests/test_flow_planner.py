@@ -20,6 +20,12 @@ class Flow(unittest.TestCase):
         self.assertEqual(flow.camelot(song("a", 128, 4)), (5, "A"))
         self.assertEqual(flow.camelot(song("b", 128, 23)), (9, "B"))
         self.assertIsNone(flow.key(song("unanalysed", None, 0)))
+        # 2026-10-26: Rick Astley - Never Gonna Give You Up = Ab (24); so 12 is Abm, 0 is unanalysed
+        self.assertEqual(flow.key_name(song("d", 113, 24)), "Ab")
+        self.assertEqual(flow.camelot(song("d", 113, 24)), (4, "B"))
+        self.assertEqual(flow.key_name(song("e", 128, 12)), "Abm")
+        self.assertEqual(flow.key_name(song("f", 128, 1)), "Am")
+        self.assertIsNone(flow.key(song("g", 128, 0)))
 
     def test_key_score_on_the_camelot_wheel(self):
         cm, gm, eb, a = song("cm", 128, 4), song("gm", 128, 11), song("eb", 128, 19), song("a", 128, 13)

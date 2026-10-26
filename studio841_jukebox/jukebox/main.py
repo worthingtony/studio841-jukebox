@@ -17,12 +17,14 @@ from .vdjremote import VdjRemote, ZeroconfAdvertiser, DnsSdAdvertiser
 log = logging.getLogger("jukebox")
 
 DEFAULTS = {"remote_name": "Studio 841 Jukebox", "remote_port": 4250, "status_port": 8841,  # = ingress_port; 8099 is taken on the Pi
-            "catalogue": "mylists:/ZZZ CLAUDE test.subfolders", "autopilot": False, "runway": 6,
+            "catalogue": "mylists:/party.subfolders", "autopilot": False, "runway": 6,
             "history_hours": 3, "log_level": "info"}
 
 # Through the Remote, get_title answers a yes/no and get_time answers nothing (2026-10-25).
 DECK_QUERIES = {"loaded": "loaded", "artist": "get_artist", "title": "get_title_before_remix",
                 "path": "get_filepath", "audible": "is_audible", "pos": "song_pos", "bpm": "get_bpm"}
+# Not per deck. The real Remote registers "automix" to light its Automix button.
+GLOBAL_QUERIES = {"automix_on": "automix"}
 
 INGRESS_PEERS = {"172.30.32.2", "127.0.0.1"}  # HA's ingress proxy; localhost for development
 
@@ -37,8 +39,9 @@ class Jukebox:
         self.opts = opts
         self.vdj = vdj or VdjRemote(opts["remote_name"], opts["remote_port"], advertiser)
         self.lock = threading.Lock()
-        self.status = {"connected": False, "decks": {}, "automix": [], "catalogue": 0,
-                       "autopilot": opts["autopilot"], "last_error": None, "updated": None}
+        self.status = {"connected": False, "decks": {}, "automix": [], "automix_count": 0,
+                       "automix_on": None, "catalogue": 0, "autopilot": opts["autopilot"],
+                       "last_error": None, "updated": None}
         self.catalogue, self.catalogue_at = [], 0
         self.played = {}  # path -> time last seen on a deck
         self.starved = False  # autopilot found nothing to add; warn once, not every tick
@@ -50,6 +53,7 @@ class Jukebox:
                 log.info("waiting for VirtualDJ to connect as %r", self.opts["remote_name"])
                 self.vdj.accept()
                 ids = {(d, k): self.vdj.watch(f"deck {d} {q}") for d in (1, 2) for k, q in DECK_QUERIES.items()}
+                ids.update({k: self.vdj.watch(q) for k, q in GLOBAL_QUERIES.items()})
             except Exception as e:
                 self.error("connecting", e)
                 time.sleep(5)
@@ -84,7 +88,8 @@ class Jukebox:
         automix = self.vdj.automix()
         log.debug("tick: catalogue %d, automix %d", len(self.catalogue), len(automix))
         with self.lock:
-            self.status.update(connected=True, decks=decks, automix=automix[:12],
+            self.status.update(connected=True, decks=decks, automix=automix[:12], automix_count=len(automix),
+                               automix_on=self.vdj.values.get(ids.get("automix_on")),
                                catalogue=len(self.catalogue), updated=time.strftime("%H:%M:%S"))
         if self.opts["autopilot"]:
             self.top_up(automix, now)
@@ -124,7 +129,7 @@ async function load(){const s=await (await fetch('api/status')).json();const e=x
 let h=`<p class="${s.connected?'ok':'bad'}">${s.connected?'VirtualDJ connected':'VirtualDJ not connected'} · updated ${e(s.updated)} · autopilot ${s.autopilot?'on':'off'} · catalogue ${s.catalogue} songs</p>`;
 if(s.last_error)h+=`<p class="bad">${e(s.last_error)}</p>`;
 h+='<h2>Decks</h2><table>';for(const[d,v]of Object.entries(s.decks||{}))h+=`<tr><td>${d}${v.audible?' ▶':''}</td><td>${v.loaded?e(v.artist)+' - '+e(v.title):'empty'}</td><td>${v.loaded&&v.pos!=null?Math.round(v.pos*100)+'%':''}</td><td>${v.bpm?Math.round(v.bpm)+' BPM':''}</td></tr>`;
-h+='</table><h2>Automix</h2><table>';(s.automix||[]).forEach((x,i)=>h+=`<tr><td>${i}</td><td>${e(x.artist)} - ${e(x.title)}</td></tr>`);
+h+=`</table><h2>Automix ${s.automix_on==null?'':s.automix_on?'(on)':'(off)'} · ${s.automix_count} songs</h2><table>`;(s.automix||[]).forEach((x,i)=>h+=`<tr><td>${i}</td><td>${e(x.artist)} - ${e(x.title)}</td></tr>`);
 document.getElementById('s').innerHTML=h+'</table>';}
 load();setInterval(load,3000);
 </script>"""

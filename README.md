@@ -12,6 +12,7 @@ decisions and the protocol evidence live in
 |---|---|
 | 0.1.0 | Connects as a Remote, reconnects on its own; status page (now playing, Automix list, catalogue) in the HA sidebar; **autopilot** (off by default) keeps a runway of fallback songs that flow (tempo + key) |
 | 0.1.1 | Rides out slow answers instead of dropping the connection; keepalive spots a dead link in under a minute; can take songs out of Automix |
+| 0.1.2 | Keys decode right (1-24); status shows whether Automix is on and its full count |
 | next | Guest picks (round-robin, flow-aware slots), admin controls, MQTT entities, approve/deny notifications, request and TV pages |
 
 ## Install
