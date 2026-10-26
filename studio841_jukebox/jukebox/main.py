@@ -33,8 +33,9 @@ INGRESS_PEERS = {"172.30.32.2", "127.0.0.1"}  # HA's ingress proxy; localhost fo
 
 # Ticks in a row that may fail before the connection is dropped so VirtualDJ dials again.
 # 0.1.0 went back to waiting after one failure while VirtualDJ still held the old connection,
-# and sat there an hour (2026-10-26).
-MAX_FAILURES = 5
+# and sat there an hour (2026-10-26). At 5, a stall took ~40 s to clear; VirtualDJ dials back in
+# about 3 s, so 3 (~25 s) costs nothing.
+MAX_FAILURES = 3
 
 
 class Jukebox:
@@ -44,7 +45,7 @@ class Jukebox:
         self.lock = threading.Lock()
         self.status = {"connected": False, "decks": {}, "automix": [], "automix_count": 0,
                        "automix_on": None, "catalogue": 0, "autopilot": opts["autopilot"],
-                       "last_error": None, "updated": None}
+                       "last_error": None, "updated": None, "mqtt_acl": None}
         self.catalogue, self.catalogue_at = [], 0
         self.played = {}  # path -> time last seen on a deck
         self.starved = False  # autopilot found nothing to add; warn once, not every tick
@@ -60,6 +61,10 @@ class Jukebox:
         with self.lock:
             self.opts["autopilot"] = self.status["autopilot"] = on
         self.changed()
+
+    def set_acl(self, result):
+        with self.lock:
+            self.status["mqtt_acl"] = result
 
     # --- VirtualDJ side ---
     def run(self):
@@ -116,8 +121,8 @@ class Jukebox:
         short = planner.runway_short(automix, start, self.opts["runway"])
         if not short:
             return
-        recent = {p for p, t in self.played.items() if now - t < self.opts["history_hours"] * 3600}
-        exclude = recent | {s.get("path") for s in automix}
+        exclude = planner.recently_played(self.catalogue, self.played, now, self.opts["history_hours"])
+        exclude |= {s.get("path") for s in automix}
         last = automix[-1] if automix else None
         song = planner.next_fallback(last, self.catalogue, exclude)
         if song is None:
@@ -129,6 +134,7 @@ class Jukebox:
         log.info("autopilot: adding %s - %s at %d (fit %s)", song.get("artist"), song.get("title"),
                  len(automix), flow.fit(last, song) if last else "-")
         self.vdj.add_to_automix(song, len(automix))
+        self.played[song["path"]] = now  # counts as played from the moment it's queued
 
     # --- status page ---
     def snapshot(self):
@@ -144,6 +150,7 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="wi
 <script>
 async function load(){const s=await (await fetch('api/status')).json();const e=x=>String(x??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let h=`<p class="${s.connected?'ok':'bad'}">${s.connected?'VirtualDJ connected':'VirtualDJ not connected'} · updated ${e(s.updated)} · autopilot ${s.autopilot?'on':'off'} · catalogue ${s.catalogue} songs</p>`;
+if(s.mqtt_acl)h+=`<p class="${s.mqtt_acl.reads=='ok'?'ok':'bad'}">MQTT access list: ${s.mqtt_acl.reads=='ok'?'reads limited to its own topics':'OPEN, saw '+s.mqtt_acl.outside+' topics outside its own'} (checked ${e(s.mqtt_acl.at)}; write probe sent to ${e(s.mqtt_acl.probe)})</p>`;
 if(s.last_error)h+=`<p class="bad">${e(s.last_error)}</p>`;
 h+='<h2>Decks</h2><table>';for(const[d,v]of Object.entries(s.decks||{}))h+=`<tr><td>${d}${v.audible?' ▶':''}</td><td>${v.loaded?e(v.artist)+' - '+e(v.title):'empty'}</td><td>${v.loaded&&v.pos!=null?Math.round(v.pos*100)+'%':''}</td><td>${v.bpm?Math.round(v.bpm)+' BPM':''}</td></tr>`;
 h+=`</table><h2>Automix ${s.automix_on==null?'':s.automix_on?'(on)':'(off)'} · ${s.automix_count} songs</h2><table>`;(s.automix||[]).forEach((x,i)=>h+=`<tr><td>${i}</td><td>${e(x.artist)} - ${e(x.title)}</td></tr>`);
@@ -204,7 +211,7 @@ def main(argv=sys.argv[1:]):
     log.info("status page on :%d (HA ingress)", opts["status_port"])
     if opts.get("mqtt_username"):
         from .mqtt import MqttBridge
-        jb.mqtt = MqttBridge(opts, __version__, jb.set_autopilot)
+        jb.mqtt = MqttBridge(opts, __version__, jb.set_autopilot, jb.set_acl)
     else:
         log.info("no mqtt_username: no HA entities")
     try:

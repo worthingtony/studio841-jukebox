@@ -5,12 +5,12 @@ playing, up next, the queue, and an Autopilot switch.
 The app logs in as its own Mosquitto user. The broker's ACL limits that user to studio841/#
 and this app's discovery topics (Tony, 2026-10-26): other apps' lock and alarm command topics
 are on the same broker, and this app will serve guests. So nothing here may publish outside
-those topics.
+those topics, except the one deliberate probe below.
 
 The payload builders are pure functions so they test without a broker; MqttBridge is the
 paho client around them.
 """
-import json, logging, threading
+import json, logging, re, threading, time
 from . import flow
 
 log = logging.getLogger(__name__)
@@ -24,6 +24,15 @@ QUEUE = f"{BASE}/queue"             # the queue's attributes
 AUTOPILOT_SET = f"{BASE}/autopilot/set"
 HA_STATUS = "homeassistant/status"  # HA's birth message: publish discovery again
 MAX_STATE = 255                     # HA's limit for a sensor state
+
+# What the broker's access list grants this login (DOCS.md). The self-check below tests it.
+ALLOWED = re.compile(r"^(studio841/.+|homeassistant/[^/]+/studio841_jukebox/.+|homeassistant/status)$")
+PROBE = "zzz-acl-probe/studio841_jukebox"  # outside ALLOWED on purpose: no one should ever see it
+CHECK_SECONDS = 5
+
+
+def allowed(topic):
+    return bool(ALLOWED.match(topic))
 
 
 def song_name(song):
@@ -96,11 +105,15 @@ def autopilot_command(payload):
 class MqttBridge:
     """Connects in the background and reconnects on its own. publish() sends only what changed."""
 
-    def __init__(self, opts, version, on_autopilot):
+    def __init__(self, opts, version, on_autopilot, on_acl=lambda result: None):
         import paho.mqtt.client as mqtt  # here, so the tests don't need paho
-        self.version, self.on_autopilot = version, on_autopilot
+        self.version, self.on_autopilot, self.on_acl = version, on_autopilot, on_acl
         self.sent, self.lock = {}, threading.Lock()
+        self.checking, self.outside = False, []
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=NODE)
+        # A bug in a callback must not stop the network loop: log it and carry on
+        self.client.suppress_exceptions = True
+        self.client.enable_logger(log)
         self.client.username_pw_set(opts["mqtt_username"], opts.get("mqtt_password"))
         self.client.will_set(STATUS, "offline", retain=True)
         self.client.reconnect_delay_set(1, 60)
@@ -114,6 +127,7 @@ class MqttBridge:
             return
         log.info("MQTT connected")
         client.subscribe([(AUTOPILOT_SET, 0), (HA_STATUS, 0)])
+        self._start_acl_check()
         self._announce()
         with self.lock:
             sent, self.sent = self.sent, {}
@@ -125,7 +139,36 @@ class MqttBridge:
             self.client.publish(topic, payload, retain=True)
         self.client.publish(STATUS, "online", retain=True)
 
+    # --- access-list self-check (studio841-jukebox#5) ---
+    def _start_acl_check(self):
+        """Reads: subscribe to everything for a few seconds; with the ACL on, only ALLOWED topics
+        arrive. Writes: publish once to PROBE, which a full-access subscriber must never see."""
+        with self.lock:
+            self.checking, self.outside = True, []
+        self.client.subscribe("#", 0)
+        threading.Timer(CHECK_SECONDS, self._finish_acl_check).start()
+
+    def _finish_acl_check(self):
+        self.client.unsubscribe("#")
+        with self.lock:
+            self.checking, outside = False, list(self.outside)
+        self.client.publish(PROBE, json.dumps({"from": NODE, "version": self.version,
+                                               "at": time.strftime("%Y-%m-%dT%H:%M:%S")}))
+        if outside:
+            log.warning("ACL check: OPEN - saw %d topics outside this login's own, e.g. %s",
+                        len(outside), ", ".join(outside[:3]))
+        else:
+            log.info("ACL check: reads OK (only its own topics in %d s)", CHECK_SECONDS)
+        log.info("ACL check: write probe sent to %s; a full-access subscriber should not see it", PROBE)
+        self.on_acl({"reads": "open" if outside else "ok", "outside": len(outside), "probe": PROBE,
+                     "at": time.strftime("%H:%M:%S")})
+
     def _message(self, client, userdata, msg):
+        if not allowed(msg.topic):
+            with self.lock:
+                if self.checking and msg.topic not in self.outside:
+                    self.outside.append(msg.topic)
+            return
         if msg.topic == HA_STATUS and msg.payload == b"online":
             self._announce()
         elif msg.topic == AUTOPILOT_SET:
