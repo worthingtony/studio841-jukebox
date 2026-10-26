@@ -1,0 +1,2 @@
+# Bonjour advert from Linux. 0.151.5 released 2026-09-28; musllinux aarch64 wheels exist.
+zeroconf==0.151.5
