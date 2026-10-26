@@ -4,21 +4,24 @@ Studio 841 Jukebox - the service.
 Holds the connection to VirtualDJ (posing as a VirtualDJ Remote), keeps now playing, the
 Automix list and the curated catalogue current, and serves a status page through HA ingress.
 With `autopilot` on, it keeps a runway of fallback songs queued, each chosen to flow from the
-one before. Guest requests come in a later version.
+one before. With an MQTT login, it shows up in HA as a device (jukebox/mqtt.py). Guest
+requests come in a later version.
 
 Options come from /data/options.json (the HA app) or --options FILE.
 """
 import json, logging, os, signal, sys, threading, time
 import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from . import flow, planner
+from . import __version__, flow, planner
 from .vdjremote import VdjRemote, ZeroconfAdvertiser, DnsSdAdvertiser
 
 log = logging.getLogger("jukebox")
 
 DEFAULTS = {"remote_name": "Studio 841 Jukebox", "remote_port": 4250, "status_port": 8841,  # = ingress_port; 8099 is taken on the Pi
             "catalogue": "mylists:/party.subfolders", "autopilot": False, "runway": 6,
-            "history_hours": 3, "log_level": "info"}
+            "history_hours": 3, "log_level": "info",
+            # Mosquitto publishes 1883 on the host, and the app shares the host's network
+            "mqtt_host": "127.0.0.1", "mqtt_port": 1883}
 
 # Through the Remote, get_title answers a yes/no and get_time answers nothing (2026-10-25).
 DECK_QUERIES = {"loaded": "loaded", "artist": "get_artist", "title": "get_title_before_remix",
@@ -45,6 +48,18 @@ class Jukebox:
         self.catalogue, self.catalogue_at = [], 0
         self.played = {}  # path -> time last seen on a deck
         self.starved = False  # autopilot found nothing to add; warn once, not every tick
+        self.mqtt = None      # MqttBridge, when there is an MQTT login
+
+    def changed(self):
+        if self.mqtt:
+            self.mqtt.publish(self.snapshot())
+
+    def set_autopilot(self, on):
+        """From HA's Autopilot switch. Lasts until the app restarts; the option sets the start value."""
+        log.info("autopilot %s (from HA)", "on" if on else "off")
+        with self.lock:
+            self.opts["autopilot"] = self.status["autopilot"] = on
+        self.changed()
 
     # --- VirtualDJ side ---
     def run(self):
@@ -71,6 +86,7 @@ class Jukebox:
                 time.sleep(3)
             with self.lock:
                 self.status["connected"] = False
+            self.changed()
 
     def error(self, where, e):
         log.warning("%s: %s", where, e, exc_info=not isinstance(e, (TimeoutError, ConnectionError)))
@@ -91,6 +107,7 @@ class Jukebox:
             self.status.update(connected=True, decks=decks, automix=automix[:12], automix_count=len(automix),
                                automix_on=self.vdj.values.get(ids.get("automix_on")),
                                catalogue=len(self.catalogue), updated=time.strftime("%H:%M:%S"))
+        self.changed()
         if self.opts["autopilot"]:
             self.top_up(automix, now)
 
@@ -185,9 +202,16 @@ def main(argv=sys.argv[1:]):
     srv = StatusServer(("0.0.0.0", opts["status_port"]), make_handler(jb))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     log.info("status page on :%d (HA ingress)", opts["status_port"])
+    if opts.get("mqtt_username"):
+        from .mqtt import MqttBridge
+        jb.mqtt = MqttBridge(opts, __version__, jb.set_autopilot)
+    else:
+        log.info("no mqtt_username: no HA entities")
     try:
         jb.run()
     finally:
+        if jb.mqtt:
+            jb.mqtt.close()
         jb.vdj.close()
 
 
