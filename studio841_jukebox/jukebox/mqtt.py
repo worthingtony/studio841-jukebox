@@ -3,7 +3,7 @@ Home Assistant entities through MQTT discovery: VirtualDJ connected, Automix run
 playing, up next, the queue, and an Autopilot switch.
 
 The app logs in as its own Mosquitto user. The broker's ACL limits that user to studio841/#
-and this app's discovery topics (Tony, 2026-10-26): Ring-MQTT's lock and alarm command topics
+and this app's discovery topics (Tony, 2026-10-26): other apps' lock and alarm command topics
 are on the same broker, and this app will serve guests. So nothing here may publish outside
 those topics.
 

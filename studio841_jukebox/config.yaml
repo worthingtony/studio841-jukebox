@@ -54,7 +54,7 @@ schema:
   log_level: list(debug|info|warning|error)
   # HA entities over MQTT discovery. The app's own Mosquitto login, which the broker's ACL
   # limits to studio841/# and its discovery topics (DOCS.md). No login: no entities.
-  # Not the Supervisor's MQTT service: that login reaches every topic, Ring-MQTT's locks too.
+  # Not the Supervisor's MQTT service: that login reaches every topic, other apps' too.
   mqtt_host: str
   mqtt_port: port
   mqtt_username: str?
