@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-10-26
+- Home Assistant entities through MQTT discovery, under a "Studio 841 Jukebox" device:
+  VirtualDJ (connected), Automix (running), Now playing (with artist, title, BPM, key and
+  position), Up next, Queue (count, with the songs), and an Autopilot switch. The switch lasts
+  until the app restarts; the `autopilot` option sets the start value.
+- Needs its own Mosquitto login (`mqtt_username`, `mqtt_password`), limited by an ACL: see
+  DOCS.md. Without one, the app runs as before with no entities.
+
 ## 0.1.2 - 2026-10-26
 - Keys decode as VirtualDJ writes them: 1-12 minor and 13-24 major, both from A, and 0 means
   not analysed. 0.1.1 read A-flat minor (12) as A-flat major, and read 0 as A-flat minor
