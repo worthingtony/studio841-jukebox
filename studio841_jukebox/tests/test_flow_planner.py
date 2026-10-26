@@ -80,5 +80,13 @@ class Planner(unittest.TestCase):
         self.assertIsNone(planner.next_fallback(None, cat, exclude={"c1", "c2", "a"}))
 
 
+    def test_recently_played_uses_virtualdjs_lastplay(self):
+        now = 1_793_060_000
+        cat = [{"path": "a", "lastplay": str(now - 3600)}, {"path": "b", "lastplay": str(now - 5 * 3600)},
+               {"path": "c"}]
+        self.assertEqual(planner.recently_played(cat, {"c": now - 60}, now, 3), {"a", "c"})
+        self.assertEqual(planner.recently_played(cat, {}, now, 0), set())
+
+
 if __name__ == "__main__":
     unittest.main()

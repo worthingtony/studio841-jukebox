@@ -48,6 +48,17 @@ def insert_position(automix, pick, guest, guest_of, start=1, max_shift=MAX_SHIFT
     return best
 
 
+def recently_played(catalogue, played, now, hours):
+    """Paths not to repeat: songs VirtualDJ says it played within `hours` (its `lastplay`, unix
+    seconds, which survives this app's restarts), plus the app's own record of what it saw on
+    a deck or queued. Before 2026-10-26 only the app's record counted, and two restarts wiped it:
+    six songs came round again within the hour."""
+    since = now - hours * 3600
+    out = {p for p, t in played.items() if t >= since}
+    out |= {s.get("path") for s in catalogue if float(s.get("lastplay") or 0) >= since}
+    return out
+
+
 def runway_short(automix, start, runway):
     """How many songs to add so `runway` songs are queued after the one playing."""
     return max(0, runway - (len(automix) - start))

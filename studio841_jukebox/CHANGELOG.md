@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 - 2026-10-26
+- No repeats across restarts: a song VirtualDJ played within `history_hours` (its own
+  `lastplay`) isn't added again. Before, only the app's in-memory record counted, and two
+  restarts wiped it: six songs came round again within the hour. Queued songs count as played.
+- A stall clears sooner: the connection is dropped after 3 failed reads in a row, not 5
+  (about 25 s, not 40). VirtualDJ dials back in within seconds.
+- MQTT access-list self-check (#5). After connecting, the app listens to everything for 5 s
+  and reports whether anything outside its own topics arrived. It then publishes once to
+  `zzz-acl-probe/studio841_jukebox`, which a full-access subscriber should never see once the
+  access list is on. The result is on the status page and in the log.
+
 ## 0.2.0 - 2026-10-26
 - Home Assistant entities through MQTT discovery, under a "Studio 841 Jukebox" device:
   VirtualDJ (connected), Automix (running), Now playing (with artist, title, BPM, key and

@@ -23,6 +23,15 @@ class Mqtt(unittest.TestCase):
             topics += [v for k, v in cfg.items() if k.endswith("_topic")]
         for t in topics:
             self.assertRegex(t, ALLOWED)
+        self.assertNotRegex(mqtt.PROBE, ALLOWED)  # the probe must fall outside, or it tests nothing
+
+    def test_allowed_matches_the_acl(self):
+        for t in ("studio841/jukebox/state", "homeassistant/sensor/studio841_jukebox/queue/config",
+                  "homeassistant/status"):
+            self.assertTrue(mqtt.allowed(t), t)
+        for t in ("ring/abc/lock/def/lock/command", "homeassistant/sensor/other/x/config",
+                  "homeassistant/status/extra", "studio841", "zzz-acl-probe/studio841_jukebox"):
+            self.assertFalse(mqtt.allowed(t), t)
 
     def test_discovery_names_match_the_planned_entity_ids(self):
         # HA builds the entity id from the device name + entity name: "Studio 841 Jukebox" + "Now playing"
