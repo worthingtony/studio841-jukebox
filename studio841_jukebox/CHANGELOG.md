@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 - 2026-10-26
+- The access-list self-check has its own positive control. 0.2.1 listened to `#` for 5 s and
+  said "reads OK" with the list **off** (first run, 2026-10-26 18:59), because nothing else on the
+  broker is retained, so there was nothing to see. Now it publishes its probe **retained** first,
+  then listens. With the list off, the broker hands the probe back and the check says OPEN. With
+  it on, the publish is refused, so nothing comes back and the check says limited. The probe is
+  cleared afterwards. Log lines: `ACL check: OPEN - …` or `ACL check: limited - …`.
+
 ## 0.2.1 - 2026-10-26
 - No repeats across restarts: a song VirtualDJ played within `history_hours` (its own
   `lastplay`) isn't added again. Before, only the app's in-memory record counted, and two
