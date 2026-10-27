@@ -150,7 +150,7 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="wi
 <script>
 async function load(){const s=await (await fetch('api/status')).json();const e=x=>String(x??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let h=`<p class="${s.connected?'ok':'bad'}">${s.connected?'VirtualDJ connected':'VirtualDJ not connected'} · updated ${e(s.updated)} · autopilot ${s.autopilot?'on':'off'} · catalogue ${s.catalogue} songs</p>`;
-if(s.mqtt_acl)h+=`<p class="${s.mqtt_acl.reads=='ok'?'ok':'bad'}">MQTT access list: ${s.mqtt_acl.reads=='ok'?'reads limited to its own topics':'OPEN, saw '+s.mqtt_acl.outside+' topics outside its own'} (checked ${e(s.mqtt_acl.at)}; write probe sent to ${e(s.mqtt_acl.probe)})</p>`;
+if(s.mqtt_acl)h+=`<p class="${s.mqtt_acl.reads=='ok'?'ok':'bad'}">MQTT access list: ${s.mqtt_acl.reads=='ok'?'limited to its own topics':'OPEN, saw '+s.mqtt_acl.outside+' topics outside its own'} (checked ${e(s.mqtt_acl.at)}; retained probe ${e(s.mqtt_acl.probe)})</p>`;
 if(s.last_error)h+=`<p class="bad">${e(s.last_error)}</p>`;
 h+='<h2>Decks</h2><table>';for(const[d,v]of Object.entries(s.decks||{}))h+=`<tr><td>${d}${v.audible?' ▶':''}</td><td>${v.loaded?e(v.artist)+' - '+e(v.title):'empty'}</td><td>${v.loaded&&v.pos!=null?Math.round(v.pos*100)+'%':''}</td><td>${v.bpm?Math.round(v.bpm)+' BPM':''}</td></tr>`;
 h+=`</table><h2>Automix ${s.automix_on==null?'':s.automix_on?'(on)':'(off)'} · ${s.automix_count} songs</h2><table>`;(s.automix||[]).forEach((x,i)=>h+=`<tr><td>${i}</td><td>${e(x.artist)} - ${e(x.title)}</td></tr>`);

@@ -141,25 +141,30 @@ class MqttBridge:
 
     # --- access-list self-check (studio841-jukebox#5) ---
     def _start_acl_check(self):
-        """Reads: subscribe to everything for a few seconds; with the ACL on, only ALLOWED topics
-        arrive. Writes: publish once to PROBE, which a full-access subscriber must never see."""
+        """Its own positive control: publish PROBE *retained*, then subscribe to everything.
+        - With the list off, the broker keeps the probe and hands it straight back.
+        - With the list on, the publish is refused and nothing is kept, so it can't come back.
+        A '#' listen alone proved nothing: on 2026-10-26, with the list off, 5 s of it saw nothing
+        outside the app's own topics, because nothing else on the broker is retained."""
         with self.lock:
             self.checking, self.outside = True, []
-        self.client.subscribe("#", 0)
-        threading.Timer(CHECK_SECONDS, self._finish_acl_check).start()
+        self.client.publish(PROBE, json.dumps({"from": NODE, "version": self.version,
+                                               "at": time.strftime("%Y-%m-%dT%H:%M:%S")}),
+                            qos=1, retain=True)
+        threading.Timer(1, lambda: self.client.subscribe("#", 0)).start()
+        threading.Timer(1 + CHECK_SECONDS, self._finish_acl_check).start()
 
     def _finish_acl_check(self):
         self.client.unsubscribe("#")
+        self.client.publish(PROBE, "", qos=1, retain=True)  # clear it; refused too when the list is on
         with self.lock:
             self.checking, outside = False, list(self.outside)
-        self.client.publish(PROBE, json.dumps({"from": NODE, "version": self.version,
-                                               "at": time.strftime("%Y-%m-%dT%H:%M:%S")}))
         if outside:
             log.warning("ACL check: OPEN - saw %d topics outside this login's own, e.g. %s",
                         len(outside), ", ".join(outside[:3]))
         else:
-            log.info("ACL check: reads OK (only its own topics in %d s)", CHECK_SECONDS)
-        log.info("ACL check: write probe sent to %s; a full-access subscriber should not see it", PROBE)
+            log.info("ACL check: limited - its retained probe didn't come back, and nothing outside "
+                     "its own topics arrived in %d s", CHECK_SECONDS)
         self.on_acl({"reads": "open" if outside else "ok", "outside": len(outside), "probe": PROBE,
                      "at": time.strftime("%H:%M:%S")})
 

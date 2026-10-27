@@ -15,6 +15,7 @@ decisions and the protocol evidence live in
 | 0.1.2 | Keys decode right (1-24); status shows whether Automix is on and its full count |
 | 0.2.0 | HA entities over MQTT: connected, Automix, now playing, up next, queue, Autopilot switch |
 | 0.2.1 | No repeats across restarts (VirtualDJ's lastplay); quicker stall recovery; MQTT access-list self-check |
+| 0.2.2 | The ACL self-check proves itself: a retained probe comes back only if the list is off |
 | next | Guest picks (round-robin, flow-aware slots), admin controls, MQTT entities, approve/deny notifications, request and TV pages |
 
 ## Install
